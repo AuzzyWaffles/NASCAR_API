@@ -14,8 +14,8 @@ def home():
 
 
 # Post races to a specific Season by Year
-@app.route('/post', methods=['POST'])
-def post_season_data():
+@app.route('/post/races', methods=['POST'])
+def post_races():
     key = request.headers.get('X-API-KEY')
     if key != API_KEY:
         return jsonify({'error': 'Unauthorized'}), 403
@@ -29,6 +29,7 @@ def post_season_data():
     winner = data.get('winner')
     year = data.get('year')
 
+    # If not all args are present, return error
     if not year or not track_id or not name or not series or not date:
         return jsonify({'error': 'Invalid Data'}), 400
 
@@ -66,10 +67,73 @@ def post_season_data():
                         'winner': winner
                         })
         db.commit()
+
     except sqlite3.Error as e:
         return jsonify({f'error': e}), 400
+
     else:
         return jsonify({'success': f'Data posted to Races_{year}'}), 201
+
+    finally:
+        db.close()
+
+
+# Post racetracks
+@app.route('/post/tracks', methods=['POST'])
+def post_tracks():
+    key = request.headers.get('X-API-KEY')
+    if key != API_KEY:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    data = request.json
+
+    name = data.get('name')
+    length = data.get('length')
+    type = data.get('type')
+    state = data.get('state')
+
+    # If not all args are present, return error
+    if not name or not length or not type or not state:
+        return jsonify({'error': 'Invalid Data'}), 400
+
+    # Create/Connect to db
+    db = sqlite3.connect('nascar_api.db')
+
+    # Create cursor
+    cursor = db.cursor()
+
+    # Create Racetracks Table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS Racetracks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            length FLOAT NOT NULL,
+            type INTEGER NOT NULL,
+            state TEXT NOT NULL
+        )
+    ''')
+
+    # Insert data into db
+    try:
+        cursor.execute(f'INSERT into Racetracks (name, length, type, state) VALUES('
+                       ':name, '
+                       ':length, '
+                       ':type,  '
+                       ':state '
+                       ')',
+                       {'name': name,
+                        'length': length,
+                        'type': type,
+                        'state': state
+                        })
+        db.commit()
+
+    except sqlite3.Error as e:
+        return jsonify({f'error': e}), 400
+
+    else:
+        return jsonify({'success': f'Data posted to Racetracks'}), 201
+
     finally:
         db.close()
 
@@ -112,7 +176,7 @@ def season():
     db.row_factory = sqlite3.Row  # Allows access by column name
     cursor = db.cursor()
 
-    # Get schedule based on year
+    # Get schedule from db
     try:
         cursor.execute(f'SELECT Racetracks.name AS track, Races_{year}.name AS race_name, Races_{year}.series, '
                        f'Races_{year}.date, Races_{year}.winner '
@@ -129,6 +193,7 @@ def season():
                                    'winner': row['winner']})
 
         return jsonify(json)
+
     except sqlite3.Error as e:
         return jsonify({'error': 'Database error', 'message': str(e)}), 500
 

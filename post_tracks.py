@@ -1,7 +1,7 @@
 import requests
 import os
 
-url = 'http://127.0.0.1:5000/post/races'
+url = 'http://127.0.0.1:5000/post/tracks'
 headers = {'X-API-KEY': os.getenv('API_KEY')}
 
 # Keep accepting data as long as app is on
@@ -9,20 +9,11 @@ app_on = True
 while app_on:
     try:
         args = {
-            'track_id': int(input('Please Enter a track_id: ')),
-            'name': input('Please enter a race name: '),
-            'series': input('Please enter a series: '),
-            'date': input('Please enter a date: '),
-            'winner': input('Would you like to enter a winner? Type y or n: ')
+            'name': input('Please Enter track name: '),
+            'length': float(input('Please enter track length in miles: ')),
+            'type': input('Please enter track type: '),
+            'state': input('Please enter track state: ')
         }
-
-        args['year'] = args['date'][:4]
-
-        # Delete winner if no winner is given
-        if args['winner'] == 'y':
-            args['winner'] = input('Please enter a winner: ')
-        else:
-            args.pop('winner')
 
         # Delete empty data
         for key, val in args.items():
