@@ -1,57 +1,80 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, render_template
 import datetime
 import sqlite3
+import os
 
 app = Flask(__name__)
+API_KEY = os.getenv('API_KEY')
 
 
+# Home
 @app.route('/')
 def home():
-    return 'Welcome to the NASCAR API!'
+    return render_template('home.html')
 
 
-# Find out if a Race is on a specific Day and Time
-@app.route('/race')
-def get():
-    date = request.args.get('date', None)
-    time = request.args.get('time', None)
+# Post races to a specific Season by Year
+@app.route('/post', methods=['POST'])
+def post_season_data():
+    key = request.headers.get('X-API-KEY')
+    if key != API_KEY:
+        return jsonify({'error': 'Unauthorized'}), 403
 
-    # Validate Date
+    data = request.json
+
+    track_id = data.get('track_id')
+    name = data.get('name')
+    series = data.get('series')
+    date = data.get('date')
+    winner = data.get('winner')
+    year = data.get('year')
+
+    if not year or not track_id or not name or not series or not date:
+        return jsonify({'error': 'Invalid Data'}), 400
+
+    # Create/Connect to db
+    db = sqlite3.connect('nascar_api.db')
+
+    # Create cursor
+    cursor = db.cursor()
+
+    # Create Races Season Table
+    cursor.execute(f'''
+        CREATE TABLE IF NOT EXISTS Races_{year} (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            track_id INTEGER,
+            name TEXT NOT NULL,
+            series TEXT NOT NULL,
+            date TEXT NOT NULL,
+            winner TEXT,
+            FOREIGN KEY (track_id) REFERENCES Racetracks (id)
+        )
+    ''')
+
     try:
-        date_obj = datetime.datetime.strptime(date, "%Y-%m-%d").date() if date else None
-    except ValueError:
-        date_obj = None
-
-    # Validate Time
-    try:
-        time_obj = datetime.datetime.strptime(time, "%H:%M:%S").time() if time else None
-    except ValueError:
-        time_obj = None
-
-    # Date Message
-    if not date_obj:
-        date_message = 'Invalid date entry.'
-    elif date_obj == datetime.datetime.today().date():
-        date_message = 'There’s a race on this day!'
+        cursor.execute(f'INSERT into Races_{year} (track_id, name, series, date, winner) VALUES('
+                       ':track_id, '
+                       ':name, '
+                       ':series, '
+                       ':date,  '
+                       ':winner '
+                       ')',
+                       {'track_id': track_id,
+                        'name': name,
+                        'series': series,
+                        'date': date,
+                        'winner': winner
+                        })
+        db.commit()
+    except sqlite3.Error as e:
+        return jsonify({f'error': e}), 400
     else:
-        date_message = 'Sorry, no race on this day.'
-
-    # Time Message
-    if not time_obj:
-        time_message = 'Invalid time entry.'
-    elif datetime.time(17, 0, 0) <= time_obj <= datetime.time(20, 0, 0):
-        time_message = 'There’s a race during this time!'
-    else:
-        time_message = 'Sorry, no race during this time.'
-
-    return jsonify({
-        'race': {
-            'date': {'entered': date, 'message': date_message},
-            'time': {'entered': str(time), 'message': time_message}
-        }
-    })
+        return jsonify({'success': f'Data posted to Races_{year}'}), 201
+    finally:
+        db.close()
 
 
+# Get track names based on State
 @app.route('/track')
 def track_by_state():
     state = request.args.get('state', None)
@@ -78,10 +101,11 @@ def track_by_state():
         db.close()
 
 
+# Get Cup season schedule based on year
 @app.route('/season/cup')
 def season():
     # If no 'year' is given, set year to current year
-    year = request.args.get('year', datetime.datetime.now().strftime("%Y"))
+    year = request.args.get('year', datetime.datetime.now().strftime('%Y'))
 
     # Connect to db and assign cursor
     db = sqlite3.connect('nascar_api.db')
