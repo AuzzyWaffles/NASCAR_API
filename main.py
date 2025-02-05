@@ -139,9 +139,9 @@ def post_tracks():
 
 
 # Get track names based on State
-@app.route('/track')
+@app.route('/tracks')
 def track_by_state():
-    state = request.args.get('state', None)
+    state = request.args.get('state')
 
     # Connect to db and assign cursor
     db = sqlite3.connect('nascar_api.db')
@@ -150,13 +150,19 @@ def track_by_state():
 
     # Get Tracks based on State
     try:
-        cursor.execute('SELECT name FROM Racetracks WHERE state = ?', (state,))
+        query = 'SELECT name FROM Racetracks'
+        params = ()
+        if state:
+            query += ' WHERE state = ?'
+            params = (state,)
+
+        cursor.execute(query, params)
         result = cursor.fetchall()
 
         # Convert result to a list of track names
         track_names = [row['name'] for row in result]
 
-        return jsonify({'message': f'The following racetracks are in {state}: {track_names}'})
+        return jsonify({'tracks': track_names})
 
     except sqlite3.Error as e:
         return jsonify({'error': 'Database error', 'message': str(e)}), 500
@@ -165,11 +171,18 @@ def track_by_state():
         db.close()
 
 
-# Get Cup season schedule based on year
-@app.route('/season/cup')
+# Get season schedule based on year
+@app.route('/season')
 def season():
-    # If no 'year' is given, set year to current year
+    # If no year is given, set year to current year
     year = request.args.get('year', datetime.datetime.now().strftime('%Y'))
+
+    # If no valid series is given, default to Cup
+    series = request.args.get('series')
+    if series == 'Xfinity':
+        series = 'NASCAR Xfinity Series'
+    else:
+        series = 'NASCAR Cup Series'
 
     # Connect to db and assign cursor
     db = sqlite3.connect('nascar_api.db')
@@ -181,7 +194,9 @@ def season():
         cursor.execute(f'SELECT Racetracks.name AS track, Races_{year}.name AS race_name, Races_{year}.series, '
                        f'Races_{year}.date, Races_{year}.winner '
                        f'FROM Races_{year} '
-                       f'JOIN Racetracks ON Races_{year}.track_id = Racetracks.id')
+                       f'JOIN Racetracks ON Races_{year}.track_id = Racetracks.id '
+                       f'WHERE Races_{year}.series = ?',
+                       (series,))
         data = cursor.fetchall()
         json = {'season': []}
 
