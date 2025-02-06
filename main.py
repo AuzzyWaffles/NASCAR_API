@@ -1,7 +1,8 @@
 from flask import Flask, jsonify, request, render_template
-import datetime
-import sqlite3
 import os
+import sqlite3
+import datetime
+from collections import defaultdict
 
 app = Flask(__name__)
 API_KEY = os.getenv('API_KEY')
@@ -174,15 +175,15 @@ def track_by_state():
 # Get season schedule based on year
 @app.route('/season')
 def season():
+    series = request.args.get('series')
     # If no year is given, set year to current year
     year = request.args.get('year', datetime.datetime.now().strftime('%Y'))
 
     # If no valid series is given, default to Cup
-    series = request.args.get('series')
-    if series == 'Xfinity':
-        series = 'NASCAR Xfinity Series'
-    else:
+    if not series or series == 'cup':
         series = 'NASCAR Cup Series'
+    elif series == 'xfinity':
+        series = 'NASCAR Xfinity Series'
 
     # Connect to db and assign cursor
     db = sqlite3.connect('nascar_api.db')
@@ -208,6 +209,50 @@ def season():
                                    'winner': row['winner']})
 
         return jsonify(json)
+
+    except sqlite3.Error as e:
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+
+    finally:
+        db.close()
+
+
+@app.route('/winners')
+def winners():
+    series = request.args.get('series')
+
+    # If no year is given, set year to current year
+    year = request.args.get('year', datetime.datetime.now().strftime('%Y'))
+
+    # If no valid series is given, default to Cup
+    if not series or series == 'cup':
+        series = 'NASCAR Cup Series'
+    elif series == 'xfinity':
+        series = 'NASCAR Xfinity Series'
+
+    # Connect to db and assign cursor
+    db = sqlite3.connect('nascar_api.db')
+    db.row_factory = sqlite3.Row  # Allows access by column name
+    cursor = db.cursor()
+
+    try:
+        # Get winners, number of wins in series for current year
+        cursor.execute(f'SELECT winner FROM Races_{year} WHERE series = ?', (series,))
+        data = cursor.fetchall()
+        winners_dict = defaultdict(int)
+        winners_dict = {row['winner']: winners_dict['winner'] + 1 for row in data}
+
+        # If some races don't have winners yet, delete key None
+        if None in winners_dict:
+            del winners_dict[None]
+
+        # Sort winners by number of wins, tiebreaker = alphabetize names
+        sorted_winners = sorted(winners_dict.items(), key=lambda item: (-item[1], item[0]))
+
+        # Turn tuples into dictionaries for JSON
+        sorted_winners = [{driver: wins} for driver, wins in sorted_winners]
+
+        return jsonify(sorted_winners)
 
     except sqlite3.Error as e:
         return jsonify({'error': 'Database error', 'message': str(e)}), 500
