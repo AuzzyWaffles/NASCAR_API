@@ -27,6 +27,7 @@ def post_races():
     name = data.get('name')
     series = data.get('series')
     date = data.get('date')
+    laps = data.get('laps')
     winner = data.get('winner')
     year = data.get('year')
 
@@ -48,23 +49,26 @@ def post_races():
             name TEXT NOT NULL,
             series TEXT NOT NULL,
             date TEXT NOT NULL,
+            laps INTEGER NOT NULL,
             winner TEXT,
             FOREIGN KEY (track_id) REFERENCES Racetracks (id)
         )
     ''')
 
     try:
-        cursor.execute(f'INSERT into Races_{year} (track_id, name, series, date, winner) VALUES('
+        cursor.execute(f'INSERT into Races_{year} (track_id, name, series, date, laps, winner) VALUES('
                        ':track_id, '
                        ':name, '
                        ':series, '
                        ':date,  '
+                       ':laps, '
                        ':winner '
                        ')',
                        {'track_id': track_id,
                         'name': name,
                         'series': series,
                         'date': date,
+                        'laps': laps,
                         'winner': winner
                         })
         db.commit()
@@ -163,7 +167,9 @@ def track_by_state():
         # Convert result to a list of track names
         track_names = [row['name'] for row in result]
 
-        return jsonify({'tracks': track_names})
+        json = {'tracks': track_names}
+
+        return jsonify(json)
 
     except sqlite3.Error as e:
         return jsonify({'error': 'Database error', 'message': str(e)}), 500
@@ -180,10 +186,12 @@ def season():
     year = request.args.get('year', datetime.datetime.now().strftime('%Y'))
 
     # If no valid series is given, default to Cup
-    if not series or series == 'cup':
-        series = 'NASCAR Cup Series'
-    elif series == 'xfinity':
+    if series == 'xfinity':
         series = 'NASCAR Xfinity Series'
+    elif series == 'craftsman':
+        series = 'NASCAR Craftsman Truck Series'
+    else:
+        series = 'NASCAR Cup Series'
 
     # Connect to db and assign cursor
     db = sqlite3.connect('nascar_api.db')
@@ -193,20 +201,24 @@ def season():
     # Get schedule from db
     try:
         cursor.execute(f'SELECT Racetracks.name AS track, Races_{year}.name AS race_name, Races_{year}.series, '
-                       f'Races_{year}.date, Races_{year}.winner '
+                       f'Races_{year}.date, Races_{year}.laps, Races_{year}.winner '
                        f'FROM Races_{year} '
                        f'JOIN Racetracks ON Races_{year}.track_id = Racetracks.id '
                        f'WHERE Races_{year}.series = ?',
                        (series,))
         data = cursor.fetchall()
-        json = {'season': []}
+
+        json = {series:
+                    {f'{year} Season': []}
+                }
 
         for row in data:
-            json['season'].append({'track': row['track'],
-                                   'name': row['race_name'],
-                                   'series': row['series'],
-                                   'date': row['date'],
-                                   'winner': row['winner']})
+            json[series][f'{year} Season'].append({'track': row['track'],
+                                                   'name': row['race_name'],
+                                                   'series': row['series'],
+                                                   'date': row['date'],
+                                                   'laps': row['laps'],
+                                                   'winner': row['winner']})
 
         return jsonify(json)
 
@@ -225,10 +237,12 @@ def winners():
     year = request.args.get('year', datetime.datetime.now().strftime('%Y'))
 
     # If no valid series is given, default to Cup
-    if not series or series == 'cup':
-        series = 'NASCAR Cup Series'
-    elif series == 'xfinity':
+    if series == 'xfinity':
         series = 'NASCAR Xfinity Series'
+    elif series == 'craftsman':
+        series = 'NASCAR Craftsman Truck Series'
+    else:
+        series = 'NASCAR Cup Series'
 
     # Connect to db and assign cursor
     db = sqlite3.connect('nascar_api.db')
@@ -249,10 +263,11 @@ def winners():
         # Sort winners by number of wins, tiebreaker = alphabetize names
         sorted_winners = sorted(winners_dict.items(), key=lambda item: (-item[1], item[0]))
 
-        # Turn tuples into dictionaries for JSON
-        sorted_winners = [{driver: wins} for driver, wins in sorted_winners]
+        json = {series:
+                    {'winners': {driver: wins for driver, wins in sorted_winners}}
+                }
 
-        return jsonify(sorted_winners)
+        return jsonify(json)
 
     except sqlite3.Error as e:
         return jsonify({'error': 'Database error', 'message': str(e)}), 500

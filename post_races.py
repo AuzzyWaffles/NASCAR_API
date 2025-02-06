@@ -13,6 +13,7 @@ while app_on:
             'name': input('Please enter a race name: '),
             'series': input('Please enter a series: '),
             'date': input('Please enter a date: '),
+            'laps': int(input('Please enter how many laps: ')),
             'winner': input('Would you like to enter a winner? Type y or n: ')
         }
 
