@@ -58,7 +58,7 @@ def post_races():
     ''')
 
     try:
-        cursor.execute(f'INSERT into Races_{year} (track_id, name, series, date, laps, winner) VALUES('
+        cursor.execute(f'INSERT into Races_{year} (track_id, name, series, date, laps, distance, winner) VALUES('
                        ':track_id, '
                        ':name, '
                        ':series, '
