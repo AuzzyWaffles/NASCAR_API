@@ -14,6 +14,7 @@ while app_on:
             'series': input('Please enter a series: '),
             'date': input('Please enter a date: '),
             'laps': int(input('Please enter how many laps: ')),
+            'distance': float(input('Please enter distance: ')),
             'winner': input('Would you like to enter a winner? Type y or n: ')
         }
 

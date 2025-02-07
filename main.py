@@ -28,12 +28,13 @@ def post_races():
     series = data.get('series')
     date = data.get('date')
     laps = data.get('laps')
+    distance = data.get('distance')
     winner = data.get('winner')
     year = data.get('year')
 
     # If not all args are present, return error
     if not year or not track_id or not name or not series or not date:
-        return jsonify({'error': 'Invalid Data'}), 400
+        return jsonify({'error': 'Invalid Data, Missing Arguments.'}), 400
 
     # Create/Connect to db
     db = sqlite3.connect('nascar_api.db')
@@ -50,6 +51,7 @@ def post_races():
             series TEXT NOT NULL,
             date TEXT NOT NULL,
             laps INTEGER NOT NULL,
+            distance FLOAT NOT NULL,
             winner TEXT,
             FOREIGN KEY (track_id) REFERENCES Racetracks (id)
         )
@@ -62,6 +64,7 @@ def post_races():
                        ':series, '
                        ':date,  '
                        ':laps, '
+                       ':distance, '
                        ':winner '
                        ')',
                        {'track_id': track_id,
@@ -69,6 +72,7 @@ def post_races():
                         'series': series,
                         'date': date,
                         'laps': laps,
+                        'distance': distance,
                         'winner': winner
                         })
         db.commit()
@@ -99,7 +103,7 @@ def post_tracks():
 
     # If not all args are present, return error
     if not name or not length or not type or not state:
-        return jsonify({'error': 'Invalid Data'}), 400
+        return jsonify({'error': 'Invalid Data, Missing Arguments'}), 400
 
     # Create/Connect to db
     db = sqlite3.connect('nascar_api.db')
@@ -157,6 +161,7 @@ def track_by_state():
     try:
         query = 'SELECT name FROM Racetracks'
         params = ()
+
         if state:
             query += ' WHERE state = ?'
             params = (state,)
@@ -182,6 +187,7 @@ def track_by_state():
 @app.route('/season')
 def season():
     series = request.args.get('series')
+
     # If no year is given, set year to current year
     year = request.args.get('year', datetime.datetime.now().strftime('%Y'))
 
@@ -201,7 +207,7 @@ def season():
     # Get schedule from db
     try:
         cursor.execute(f'SELECT Racetracks.name AS track, Races_{year}.name AS race_name, Races_{year}.series, '
-                       f'Races_{year}.date, Races_{year}.laps, Races_{year}.winner '
+                       f'Races_{year}.date, Races_{year}.laps, Races_{year}.distance, Races_{year}.winner '
                        f'FROM Races_{year} '
                        f'JOIN Racetracks ON Races_{year}.track_id = Racetracks.id '
                        f'WHERE Races_{year}.series = ?',
@@ -218,6 +224,7 @@ def season():
                                                    'series': row['series'],
                                                    'date': row['date'],
                                                    'laps': row['laps'],
+                                                   'distance': row['distance'],
                                                    'winner': row['winner']})
 
         return jsonify(json)
@@ -264,8 +271,9 @@ def winners():
         sorted_winners = sorted(winners_dict.items(), key=lambda item: (-item[1], item[0]))
 
         json = {series:
-                    {'winners': {driver: wins for driver, wins in sorted_winners}}
-                }
+                    {f'{year} Season':
+                         {'winners': {driver: wins for driver, wins in sorted_winners}}
+                     }}
 
         return jsonify(json)
 
