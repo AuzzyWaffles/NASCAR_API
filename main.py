@@ -119,6 +119,7 @@ def post_track():
         db.session.commit()
 
     except Exception as e:
+        db.session.rollback()
         return jsonify({f'error': e}), 400
 
     else:
@@ -145,6 +146,7 @@ def track_by_state():
         return jsonify(json)
 
     except Exception as e:
+        db.session.rollback()
         return jsonify({'error': 'Database error', 'message': str(e)}), 500
 
 
@@ -190,16 +192,17 @@ def season():
 
         for row in data:
             json[series][f'{year} Season'].append({'track': row.track,
-                                                   'name': row.race_name,
-                                                   'series': row.series,
-                                                   'date': row.date,
-                                                   'laps': row.laps,
-                                                   'distance': row.distance,
-                                                   'winner': row.winner})
+                                                   'name': row['race_name'],
+                                                   'series': row['series'],
+                                                   'date': row['date'],
+                                                   'laps': row['laps'],
+                                                   'distance': row['distance'],
+                                                   'winner': row['winner']})
 
         return jsonify(json)
 
     except Exception as e:
+        db.session.rollback()
         return jsonify({'error': 'Database error', 'message': str(e)}), 500
 
 
@@ -231,7 +234,7 @@ def winners():
 
         data = query.all()
         winners_dict = defaultdict(int)
-        winners_dict = {winner.winner: winners_dict['winner'] + 1 for winner in data}
+        winners_dict = {row['winner']: winners_dict['winner'] + 1 for row in data}
 
         # If some races don't have winners yet, delete key None
         if None in winners_dict:
@@ -248,6 +251,7 @@ def winners():
         return jsonify(json)
 
     except sqlite3.Error as e:
+        db.session.rollback()
         return jsonify({'error': 'Database error', 'message': str(e)}), 500
 
     finally:
