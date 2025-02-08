@@ -9,7 +9,7 @@ from collections import defaultdict
 
 # Initialize Flask app
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABADE_URI'] = 'sqlite:///nascar_api.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///nascar_api.db'
 API_KEY = os.getenv('API_KEY')
 
 # Initialize Flask-SQLAlchemy
@@ -19,7 +19,6 @@ db = SQLAlchemy(app)
 # Define Racetracks table model
 class Racetrack(db.Model):
     __tablename__ = 'Racetracks'
-
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String, nullable=False)
     length = db.Column(db.Float, nullable=False)
@@ -31,7 +30,6 @@ class Racetrack(db.Model):
 def dynamic_races_table(year):
     class Race(db.Model):
         __tablename__ = f'Races_{year}'
-
         id = db.Column(db.Integer, primary_key=True, autoincrement=True)
         track_id = db.Column(db.Integer, db.ForeignKey('Racetracks.id'))
         name = db.Column(db.String, nullable=False)
@@ -185,19 +183,18 @@ def season():
         )
 
         data = query.all()
-
         json = {series:
                     {f'{year} Season': []}
                 }
 
         for row in data:
             json[series][f'{year} Season'].append({'track': row.track,
-                                                   'name': row['race_name'],
-                                                   'series': row['series'],
-                                                   'date': row['date'],
-                                                   'laps': row['laps'],
-                                                   'distance': row['distance'],
-                                                   'winner': row['winner']})
+                                                   'name': row.race_name,
+                                                   'series': row.series,
+                                                   'date': row.date,
+                                                   'laps': row.laps,
+                                                   'distance': row.distance,
+                                                   'winner': row.winner})
 
         return jsonify(json)
 
@@ -234,7 +231,8 @@ def winners():
 
         data = query.all()
         winners_dict = defaultdict(int)
-        winners_dict = {row['winner']: winners_dict['winner'] + 1 for row in data}
+        for row in data:
+            winners_dict[row.winner] += 1
 
         # If some races don't have winners yet, delete key None
         if None in winners_dict:
@@ -253,9 +251,6 @@ def winners():
     except sqlite3.Error as e:
         db.session.rollback()
         return jsonify({'error': 'Database error', 'message': str(e)}), 500
-
-    finally:
-        db.close()
 
 
 if __name__ == '__main__':
