@@ -1,11 +1,47 @@
 from flask import Flask, jsonify, request, render_template
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import MetaData, Table
+
 import os
 import sqlite3
 import datetime
 from collections import defaultdict
 
+# Initialize Flask app
 app = Flask(__name__)
+app.config['SQLALCHEMY_DATABADE_URI'] = 'sqlite:///nascar_api.db'
 API_KEY = os.getenv('API_KEY')
+
+# Initialize Flask-SQLAlchemy
+db = SQLAlchemy(app)
+
+
+# Define Racetracks table model
+class Racetrack(db.Model):
+    __tablename__ = 'Racetracks'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String, nullable=False)
+    length = db.Column(db.Float, nullable=False)
+    type = db.Column(db.String, nullable=False)
+    state = db.Column(db.String, nullable=False)
+
+
+# Define Races table model
+def dynamic_races_table(year):
+    class Race(db.Model):
+        __tablename__ = f'Races_{year}'
+
+        id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+        track_id = db.Column(db.Integer, db.ForeignKey('Racetracks.id'))
+        name = db.Column(db.String, nullable=False)
+        series = db.Column(db.String, nullable=False)
+        date = db.Column(db.String, nullable=False)
+        laps = db.Column(db.Integer, nullable=False)
+        distance = db.Column(db.Float, nullable=False)
+        winner = db.Column(db.String)
+
+    return Race
 
 
 # Home
@@ -16,7 +52,7 @@ def home():
 
 # Post races to a specific Season by Year
 @app.route('/post/races', methods=['POST'])
-def post_races():
+def post_race():
     key = request.headers.get('X-API-KEY')
     if key != API_KEY:
         return jsonify({'error': 'Unauthorized'}), 403
@@ -36,60 +72,29 @@ def post_races():
     if not year or not track_id or not name or not series or not date:
         return jsonify({'error': 'Invalid Data, Missing Arguments.'}), 400
 
-    # Create/Connect to db
-    db = sqlite3.connect('nascar_api.db')
-
-    # Create cursor
-    cursor = db.cursor()
-
-    # Create Races Season Table
-    cursor.execute(f'''
-        CREATE TABLE IF NOT EXISTS Races_{year} (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            track_id INTEGER,
-            name TEXT NOT NULL,
-            series TEXT NOT NULL,
-            date TEXT NOT NULL,
-            laps INTEGER NOT NULL,
-            distance FLOAT NOT NULL,
-            winner TEXT,
-            FOREIGN KEY (track_id) REFERENCES Racetracks (id)
-        )
-    ''')
-
     try:
-        cursor.execute(f'INSERT into Races_{year} (track_id, name, series, date, laps, distance, winner) VALUES('
-                       ':track_id, '
-                       ':name, '
-                       ':series, '
-                       ':date,  '
-                       ':laps, '
-                       ':distance, '
-                       ':winner '
-                       ')',
-                       {'track_id': track_id,
-                        'name': name,
-                        'series': series,
-                        'date': date,
-                        'laps': laps,
-                        'distance': distance,
-                        'winner': winner
-                        })
-        db.commit()
+        # Create Race table model based on year
+        Race = dynamic_races_table(year)
 
-    except sqlite3.Error as e:
+        # Create instance of Race table model
+        new_race = Race(track_id=track_id, name=name, series=series, date=date,
+                        laps=laps, distance=distance, winner=winner)
+
+        # Add new race to the session and commit to db
+        db.session.add(new_race)
+        db.session.commit()
+
+    except Exception as e:
+        db.session.rollback()
         return jsonify({f'error': e}), 400
 
     else:
         return jsonify({'success': f'Data posted to Races_{year}'}), 201
 
-    finally:
-        db.close()
-
 
 # Post racetracks
 @app.route('/post/tracks', methods=['POST'])
-def post_tracks():
+def post_track():
     key = request.headers.get('X-API-KEY')
     if key != API_KEY:
         return jsonify({'error': 'Unauthorized'}), 403
@@ -105,46 +110,19 @@ def post_tracks():
     if not name or not length or not type or not state:
         return jsonify({'error': 'Invalid Data, Missing Arguments'}), 400
 
-    # Create/Connect to db
-    db = sqlite3.connect('nascar_api.db')
-
-    # Create cursor
-    cursor = db.cursor()
-
-    # Create Racetracks Table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS Racetracks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            length FLOAT NOT NULL,
-            type INTEGER NOT NULL,
-            state TEXT NOT NULL
-        )
-    ''')
-
-    # Insert data into db
     try:
-        cursor.execute(f'INSERT into Racetracks (name, length, type, state) VALUES('
-                       ':name, '
-                       ':length, '
-                       ':type,  '
-                       ':state '
-                       ')',
-                       {'name': name,
-                        'length': length,
-                        'type': type,
-                        'state': state
-                        })
-        db.commit()
+        # Create instance of Racetrack table model
+        new_track = Racetrack(name=name, length=length, type=type, state=state)
 
-    except sqlite3.Error as e:
+        # Add new race to the session and commit to db
+        db.session.add(new_track)
+        db.session.commit()
+
+    except Exception as e:
         return jsonify({f'error': e}), 400
 
     else:
         return jsonify({'success': f'Data posted to Racetracks'}), 201
-
-    finally:
-        db.close()
 
 
 # Get track names based on State
@@ -152,35 +130,22 @@ def post_tracks():
 def track_by_state():
     state = request.args.get('state')
 
-    # Connect to db and assign cursor
-    db = sqlite3.connect('nascar_api.db')
-    db.row_factory = sqlite3.Row  # Allows access by column name
-    cursor = db.cursor()
-
     # Get Tracks based on State
     try:
-        query = 'SELECT name FROM Racetracks'
-        params = ()
-
         if state:
-            query += ' WHERE state = ?'
-            params = (state,)
-
-        cursor.execute(query, params)
-        result = cursor.fetchall()
+            racetracks = Racetrack.query.filter_by(state=state).all()
+        else:
+            racetracks = Racetrack.query.all()
 
         # Convert result to a list of track names
-        track_names = [row['name'] for row in result]
+        racetracks = [track.name for track in racetracks]
 
-        json = {'tracks': track_names}
+        json = {'tracks': racetracks}
 
         return jsonify(json)
 
-    except sqlite3.Error as e:
+    except Exception as e:
         return jsonify({'error': 'Database error', 'message': str(e)}), 500
-
-    finally:
-        db.close()
 
 
 # Get season schedule based on year
@@ -199,41 +164,43 @@ def season():
     else:
         series = 'NASCAR Cup Series'
 
-    # Connect to db and assign cursor
-    db = sqlite3.connect('nascar_api.db')
-    db.row_factory = sqlite3.Row  # Allows access by column name
-    cursor = db.cursor()
-
     # Get schedule from db
     try:
-        cursor.execute(f'SELECT Racetracks.name AS track, Races_{year}.name AS race_name, Races_{year}.series, '
-                       f'Races_{year}.date, Races_{year}.laps, Races_{year}.distance, Races_{year}.winner '
-                       f'FROM Races_{year} '
-                       f'JOIN Racetracks ON Races_{year}.track_id = Racetracks.id '
-                       f'WHERE Races_{year}.series = ?',
-                       (series,))
-        data = cursor.fetchall()
+        metadata = MetaData()
+        season_table = Table(f'Races_{year}', metadata, autoload_with=db.engine)
+        query = db.session.query(
+            Racetrack.name.label('track'),
+            season_table.c.name.label('race_name'),
+            season_table.c.series,
+            season_table.c.date,
+            season_table.c.laps,
+            season_table.c.distance,
+            season_table.c.winner
+        ).join(
+            Racetrack, season_table.c.track_id == Racetrack.id
+        ).filter(
+            season_table.c.series == series
+        )
+
+        data = query.all()
 
         json = {series:
                     {f'{year} Season': []}
                 }
 
         for row in data:
-            json[series][f'{year} Season'].append({'track': row['track'],
-                                                   'name': row['race_name'],
-                                                   'series': row['series'],
-                                                   'date': row['date'],
-                                                   'laps': row['laps'],
-                                                   'distance': row['distance'],
-                                                   'winner': row['winner']})
+            json[series][f'{year} Season'].append({'track': row.track,
+                                                   'name': row.race_name,
+                                                   'series': row.series,
+                                                   'date': row.date,
+                                                   'laps': row.laps,
+                                                   'distance': row.distance,
+                                                   'winner': row.winner})
 
         return jsonify(json)
 
-    except sqlite3.Error as e:
+    except Exception as e:
         return jsonify({'error': 'Database error', 'message': str(e)}), 500
-
-    finally:
-        db.close()
 
 
 @app.route('/winners')
@@ -251,17 +218,20 @@ def winners():
     else:
         series = 'NASCAR Cup Series'
 
-    # Connect to db and assign cursor
-    db = sqlite3.connect('nascar_api.db')
-    db.row_factory = sqlite3.Row  # Allows access by column name
-    cursor = db.cursor()
-
     try:
         # Get winners, number of wins in series for current year
-        cursor.execute(f'SELECT winner FROM Races_{year} WHERE series = ?', (series,))
-        data = cursor.fetchall()
+        metadata = MetaData()
+        season_table = Table(f'Races_{year}', metadata, autoload_with=db.engine)
+
+        query = db.session.query(
+            season_table.c.winner
+        ).filter(
+            season_table.c.series == series  # Filter by series from the request
+        )
+
+        data = query.all()
         winners_dict = defaultdict(int)
-        winners_dict = {row['winner']: winners_dict['winner'] + 1 for row in data}
+        winners_dict = {winner.winner: winners_dict['winner'] + 1 for winner in data}
 
         # If some races don't have winners yet, delete key None
         if None in winners_dict:
